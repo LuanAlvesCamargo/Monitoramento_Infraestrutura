@@ -4,7 +4,7 @@
 
 Este projeto implementará um laboratório de monitoramento de infraestrutura utilizando a máquina Fedora como ambiente principal. Não será utilizada máquina virtual nem Ubuntu Server físico. Os serviços serão executados com Podman e Compose sempre que isso for tecnicamente adequado.
 
-O projeto terá uma aplicação web baseada no OWASP Juice Shop, dois clientes gerando requisições, Prometheus, Grafana e Zabbix. A mesma infraestrutura será observada por Zabbix e Prometheus, permitindo uma comparação prática entre as ferramentas.
+O projeto terá uma aplicação web baseada no OWASP Juice Shop, dois clientes gerando requisições, Prometheus, Grafana e Zabbix. A aplicação será executada pela imagem oficial pré-construída do Juice Shop, evitando instalar dependências no Fedora. A mesma infraestrutura será observada por Zabbix e Prometheus, permitindo uma comparação prática entre as ferramentas.
 
 ## 2. Objetivo geral
 
@@ -202,4 +202,3 @@ O projeto será considerado funcional quando:
 Não serão incluídos inicialmente Kubernetes, CI/CD, Loki, Alertmanager, banco da aplicação ou exposição pública na Internet. Esses recursos podem ser adicionados apenas se houver tempo e se não prejudicarem a demonstração principal.
 
 O Juice Shop é uma aplicação propositalmente vulnerável. Ela deverá permanecer restrita ao ambiente local e não deverá ser publicada em uma interface acessível pela Internet.
-

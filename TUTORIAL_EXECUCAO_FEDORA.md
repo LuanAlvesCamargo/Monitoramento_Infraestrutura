@@ -68,13 +68,15 @@ mkdir -p zabbix/exports
 mkdir -p scripts evidencias relatorio
 ```
 
-## 4. Obter a aplicação
+## 4. Obter a aplicação (opcional)
 
-Clonar o repositório oficial do OWASP Juice Shop:
+O repositório pode ser clonado apenas para consulta e estudo do código:
 
 ```bash
 git clone --depth 1 https://github.com/juice-shop/juice-shop.git app/juice-shop
 ```
+
+A pasta `app/juice-shop/` está no `.gitignore` porque não será versionada no projeto principal. O Compose utilizará a imagem oficial pré-construída, evitando instalar Node.js/npm no Fedora e evitando reconstruir as dependências localmente.
 
 A aplicação é propositalmente vulnerável e deve ser usada somente localmente. Não configurar encaminhamento de porta para uma interface pública nem abrir essa porta no firewall para a rede externa.
 
@@ -90,6 +92,17 @@ O arquivo `compose.yaml` deverá conter os seguintes serviços:
 - `zabbix-server`;
 - `zabbix-web`;
 - `zabbix-db`.
+
+Para o Juice Shop, a configuração inicial utiliza a imagem oficial:
+
+```yaml
+juice-shop:
+  image: docker.io/bkimminich/juice-shop:latest
+  ports:
+    - "3100:3000"
+```
+
+Não usar `npm install` nem `podman compose build juice-shop` no Fedora nesta etapa.
 
 Todos os serviços devem compartilhar uma rede interna, por exemplo `monitoramento`. Dentro dessa rede, os containers devem acessar uns aos outros pelos nomes dos serviços, e não por `localhost`.
 
@@ -398,4 +411,3 @@ podman compose down -v
 ```
 
 O segundo comando remove o banco e os dados persistidos do Zabbix/Grafana definidos como volumes do projeto. Não utilizar comandos globais de limpeza do Podman, pois eles podem afetar os containers existentes na máquina.
-

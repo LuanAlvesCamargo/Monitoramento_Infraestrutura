@@ -5,6 +5,9 @@ node_modules/
 __pycache__/
 *.log
 
+# Código-fonte clonado localmente; a execução usa a imagem oficial do Juice Shop
+app/juice-shop/
+
 # Dados persistentes dos serviços
 data/
 grafana/data/
