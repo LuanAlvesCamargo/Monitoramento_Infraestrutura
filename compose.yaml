@@ -1,0 +1,15 @@
+name: monitoramento-infraestrutura
+
+services:
+  juice-shop:
+    image: docker.io/bkimminich/juice-shop:latest
+    container_name: monitoramento-juice-shop
+    ports:
+      - "${JUICE_SHOP_PORT:-3100}:3000"
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+networks:
+  monitoramento:
+    name: monitoramento

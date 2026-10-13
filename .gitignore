@@ -1,0 +1,15 @@
+.env
+
+# Dependências locais e artefatos de execução
+node_modules/
+__pycache__/
+*.log
+
+# Dados persistentes dos serviços
+data/
+grafana/data/
+prometheus/data/
+zabbix/data/
+
+# Evidências locais antes da seleção final
+evidencias/tmp/
