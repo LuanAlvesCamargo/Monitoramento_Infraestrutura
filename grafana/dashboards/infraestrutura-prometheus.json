@@ -1,0 +1,63 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "title": "CPU do Fedora",
+      "type": "timeseries",
+      "targets": [{"expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{job=\"fedora-node\",mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{instance}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "title": "Memória utilizada",
+      "type": "timeseries",
+      "targets": [{"expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"fedora-node\"} / node_memory_MemTotal_bytes{job=\"fedora-node\"})", "legendFormat": "{{instance}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "title": "Disco utilizado",
+      "type": "timeseries",
+      "targets": [{"expr": "100 * (1 - node_filesystem_avail_bytes{job=\"fedora-node\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{job=\"fedora-node\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"})", "legendFormat": "{{mountpoint}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "title": "Rede recebida",
+      "type": "timeseries",
+      "targets": [{"expr": "sum by (device) (rate(node_network_receive_bytes_total{job=\"fedora-node\",device!~\"lo|veth.*\"}[5m]))", "legendFormat": "{{device}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 24, "x": 0, "y": 16},
+      "id": 5,
+      "title": "Targets disponíveis",
+      "type": "stat",
+      "targets": [{"expr": "sum(up)", "legendFormat": "targets UP", "refId": "A"}]
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["monitoramento", "prometheus", "fedora"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Monitoramento de Infraestrutura - Prometheus",
+  "uid": "infra-prometheus",
+  "version": 1
+}

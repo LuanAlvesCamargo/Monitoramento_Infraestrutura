@@ -4,7 +4,7 @@
 
 Este projeto implementará um laboratório de monitoramento de infraestrutura utilizando a máquina Fedora como ambiente principal. Não será utilizada máquina virtual nem Ubuntu Server físico. Os serviços serão executados com Podman e Compose sempre que isso for tecnicamente adequado.
 
-O projeto terá uma aplicação web baseada no OWASP Juice Shop, dois clientes gerando requisições, Prometheus, Grafana e Zabbix. A aplicação será executada pela imagem oficial pré-construída do Juice Shop, evitando instalar dependências no Fedora. A mesma infraestrutura será observada por Zabbix e Prometheus, permitindo uma comparação prática entre as ferramentas.
+O projeto terá uma aplicação web baseada no OWASP Juice Shop, dois clientes e um bot de tráfego gerando requisições, Prometheus, Grafana e Zabbix. A aplicação será executada pela imagem oficial pré-construída do Juice Shop, evitando instalar dependências no Fedora. A mesma infraestrutura será observada por Zabbix e Prometheus, permitindo uma comparação prática entre as ferramentas.
 
 ## 2. Objetivo geral
 
@@ -13,9 +13,9 @@ Implementar e comparar duas abordagens open source de monitoramento de infraestr
 ## 3. Objetivos específicos
 
 - Executar uma aplicação web em container.
-- Gerar tráfego por meio de dois containers clientes.
+- Gerar tráfego por meio de dois containers clientes e um bot de navegação HTTP.
 - Coletar métricas do Fedora com Prometheus e Node Exporter.
-- Monitorar o host Fedora com Zabbix Agent e Zabbix Server.
+- Monitorar o host Fedora com Zabbix Server usando itens HTTP baseados nas métricas do Node Exporter/Prometheus.
 - Criar alertas equivalentes nas duas ferramentas.
 - Visualizar dados no frontend do Zabbix.
 - Centralizar no Grafana informações do Prometheus e do Zabbix.
@@ -35,12 +35,17 @@ Implementar e comparar duas abordagens open source de monitoramento de infraestr
                     |              |            |
                     +------ Prometheus --------+
                            /          \
-                    Node Exporter   Zabbix Agent
-                         |               |
-                         +--- Fedora ---+
+                    Node Exporter
+                         |
+                         +--- Fedora
+                              |
+                         Prometheus
+                              |
+                         Zabbix HTTP agent
 
              cliente-1  -----------+
              cliente-2  -----------+--> Juice Shop
+             bot-trafego ----------+
 ```
 
 ### Serviços em Compose
@@ -50,17 +55,17 @@ Os seguintes componentes ficarão no arquivo `compose.yaml`:
 - Juice Shop;
 - cliente de carga 1;
 - cliente de carga 2;
+- bot de tráfego HTTP;
 - Prometheus;
 - Grafana;
 - Zabbix Server;
 - frontend web do Zabbix;
+- dashboard Flask centralizado;
 - banco PostgreSQL exclusivo do Zabbix.
 
-### Serviços no host Fedora
+### Coleta do host Fedora
 
-O Node Exporter e o Zabbix Agent serão executados no Fedora, preferencialmente como serviços do sistema ou containers configurados para enxergar corretamente o host.
-
-Essa separação é importante: se o agente for executado em um container comum, ele poderá medir apenas o próprio container. Como o trabalho exige CPU, memória, disco e rede do servidor, os coletores precisam observar o host Fedora.
+O Node Exporter será executado pelo Compose com montagens somente leitura de `/proc`, `/sys` e `/`, além de acesso ao namespace do host. Assim, ele observará o Fedora, e não apenas o container do Juice Shop. Como o Fedora não disponibiliza o pacote `zabbix-agent2` nos repositórios padrão usados neste laboratório, o Zabbix Server consultará o Prometheus pela rede interna usando itens do tipo HTTP agent.
 
 ## 5. Portas reservadas
 
@@ -75,7 +80,7 @@ A captura fornecida mostra referências às portas `3306`, `9000`, `9443`, `5432
 | Zabbix Server | Apenas rede Compose | 10051 | Comunicação interna |
 | PostgreSQL do Zabbix | Apenas rede Compose | 5432 | Banco interno |
 | Node Exporter | 9101, se necessário | 9100 | Métricas do Fedora |
-| Zabbix Agent | Apenas rede local | 10050 | Coleta no Fedora |
+| Zabbix HTTP agent | Apenas rede Compose | — | Consulta Prometheus |
 
 Antes da execução, as portas deverão ser confirmadas com `ss` e `podman ps`. Se alguma estiver ocupada, a alteração deverá ser feita somente na porta do host; as portas internas dos containers permanecem iguais.
 
@@ -85,8 +90,8 @@ Antes da execução, as portas deverão ser confirmadas com `ss` e `podman ps`. 
 2. O Fedora executa os containers e consome recursos de CPU, memória, disco e rede.
 3. O Node Exporter expõe métricas do Fedora em formato Prometheus.
 4. O Prometheus coleta essas métricas periodicamente.
-5. O Zabbix Agent coleta informações do Fedora e envia ou disponibiliza os dados ao Zabbix Server.
-6. O Grafana consulta o Prometheus e o Zabbix.
+5. O Zabbix Server consulta o Prometheus por itens do tipo HTTP agent.
+6. O Grafana consulta o Prometheus e, posteriormente, o Zabbix.
 7. O Zabbix Web apresenta hosts, itens, histórico, problemas e triggers.
 
 ## 7. Métricas e alertas
@@ -127,6 +132,28 @@ O dashboard terá, no mínimo:
 9. comparação durante o teste de alta CPU.
 
 O Zabbix continuará sendo acessível pelo próprio frontend. O Grafana será usado como visão unificada e comparativa.
+
+## 8.1 Situação atual da implementação
+
+Já implementado e validado:
+
+- Juice Shop acessível em `http://localhost:3100`;
+- dois clientes e o `bot-trafego` gerando requisições HTTP;
+- Node Exporter coletando métricas do Fedora;
+- Prometheus com os alvos `prometheus` e `fedora-node` como `UP`;
+- regra de CPU carregada no Prometheus;
+- Grafana com datasource Prometheus e dashboard provisionados;
+- Zabbix Server, frontend web e PostgreSQL executando em Compose.
+- Dashboard Flask criado no Compose, com indicação da fonte em cada cartão,
+  gráfico e tabela.
+
+Ainda pendente:
+
+- validar o host Fedora e os itens pela API do Zabbix;
+- criar ou importar a visão do Zabbix no Grafana;
+- preencher a credencial da API do Zabbix no `.env` e validar o dashboard Flask;
+- executar e registrar o teste de alta CPU;
+- exportar configurações, capturas e relatório final.
 
 ## 9. Testes práticos
 

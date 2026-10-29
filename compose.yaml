@@ -10,6 +10,199 @@ services:
     networks:
       - monitoramento
 
+  cliente-1:
+    image: docker.io/library/alpine:3.20
+    container_name: monitoramento-cliente-1
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        while true; do
+          wget -q -O /dev/null
+          'http://juice-shop:3000/rest/products/search?q=apple';
+          sleep 2;
+        done
+    depends_on:
+      - juice-shop
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  cliente-2:
+    image: docker.io/library/alpine:3.20
+    container_name: monitoramento-cliente-2
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        while true; do
+          wget -q -O /dev/null
+          'http://juice-shop:3000/rest/products/search?q=banana';
+          sleep 3;
+        done
+    depends_on:
+      - juice-shop
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  bot-trafego:
+    image: docker.io/library/alpine:3.20
+    container_name: monitoramento-bot-trafego
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        trap 'exit 0' TERM INT;
+        while true; do
+          wget -q -O /dev/null 'http://juice-shop:3000/';
+          wget -q -O /dev/null 'http://juice-shop:3000/rest/products/search?q=apple';
+          wget -q -O /dev/null 'http://juice-shop:3000/rest/products/search?q=banana';
+          wget -q -O /dev/null 'http://juice-shop:3000/rest/products/search?q=juice';
+          sleep 1;
+        done
+    depends_on:
+      - juice-shop
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: monitoramento-node-exporter
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    pid: host
+    ports:
+      - "9101:9100"
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    networks:
+      - monitoramento
+
+  prometheus:
+    image: quay.io/prometheus/prometheus:latest
+    container_name: monitoramento-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9091:9090"
+    restart: unless-stopped
+    depends_on:
+      - node-exporter
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
+      - ./prometheus/rules:/etc/prometheus/rules:ro,z
+      - prometheus-data:/prometheus
+    networks:
+      - monitoramento
+
+  grafana:
+    image: docker.io/grafana/grafana:latest
+    container_name: monitoramento-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3200:3000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro,z
+    networks:
+      - monitoramento
+
+  dashboard:
+    build:
+      context: ./dashboard
+    container_name: monitoramento-dashboard
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      ZABBIX_API_URL: http://zabbix-web:8080/api_jsonrpc.php
+      ZABBIX_API_USER: ${ZABBIX_API_USER:-Admin}
+      ZABBIX_API_PASSWORD: ${ZABBIX_API_PASSWORD:-}
+      JUICE_SHOP_URL: http://juice-shop:3000/
+    ports:
+      - "${DASHBOARD_PORT:-3300}:5000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - zabbix-web
+      - juice-shop
+    networks:
+      - monitoramento
+
+  zabbix-db:
+    image: docker.io/library/postgres:16-alpine
+    container_name: monitoramento-zabbix-db
+    environment:
+      POSTGRES_USER: ${ZABBIX_DB_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-zabbix-local-2026}
+      POSTGRES_DB: ${ZABBIX_DB_NAME:-zabbix}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - zabbix-db-data:/var/lib/postgresql/data
+    networks:
+      - monitoramento
+
+  zabbix-server:
+    image: docker.io/zabbix/zabbix-server-pgsql:alpine-7.4-latest
+    container_name: monitoramento-zabbix-server
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: ${ZABBIX_DB_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-zabbix-local-2026}
+      POSTGRES_DB: ${ZABBIX_DB_NAME:-zabbix}
+    depends_on:
+      - zabbix-db
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  zabbix-web:
+    image: docker.io/zabbix/zabbix-web-nginx-pgsql:alpine-7.4-latest
+    container_name: monitoramento-zabbix-web
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: ${ZABBIX_DB_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:-zabbix-local-2026}
+      POSTGRES_DB: ${ZABBIX_DB_NAME:-zabbix}
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: America/Sao_Paulo
+    depends_on:
+      - zabbix-db
+      - zabbix-server
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
 networks:
   monitoramento:
     name: monitoramento
+
+volumes:
+  prometheus-data:
+    name: monitoramento-prometheus-data
+  grafana-data:
+    name: monitoramento-grafana-data
+  zabbix-db-data:
+    name: monitoramento-zabbix-db-data

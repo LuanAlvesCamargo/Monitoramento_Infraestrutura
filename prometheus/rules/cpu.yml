@@ -1,0 +1,16 @@
+groups:
+  - name: infraestrutura
+    rules:
+      - alert: CPUAlta
+        expr: |
+          100 - (
+            avg by (instance) (
+              rate(node_cpu_seconds_total{mode="idle"}[2m])
+            ) * 100
+          ) > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: CPU acima de 80%
+          description: O host {{ $labels.instance }} está com utilização elevada de CPU.

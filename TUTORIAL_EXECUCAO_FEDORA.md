@@ -87,6 +87,7 @@ O arquivo `compose.yaml` deverá conter os seguintes serviços:
 - `juice-shop`;
 - `cliente-1`;
 - `cliente-2`;
+- `bot-trafego`;
 - `prometheus`;
 - `grafana`;
 - `zabbix-server`;
@@ -118,9 +119,9 @@ ports:
 
 O PostgreSQL e o Zabbix Server não precisam publicar portas para o host, pois serão acessados somente pela rede interna do Compose.
 
-## 6. Criar o arquivo de configuração do Prometheus
+## 6. Configurar o Prometheus
 
-Criar `prometheus/prometheus.yml` com os seguintes alvos conceituais:
+O arquivo `prometheus/prometheus.yml` já está criado com dois alvos:
 
 ```yaml
 global:
@@ -137,14 +138,9 @@ scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["host.containers.internal:9101"]
-
-  - job_name: juice-shop
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["juice-shop:3000"]
 ```
 
-O alvo do Juice Shop deverá ser ajustado caso a aplicação não exponha métricas Prometheus. Nesse caso, a disponibilidade HTTP será tratada pelo Zabbix ou por um exporter específico, e as métricas de infraestrutura continuarão vindo do Node Exporter.
+O alvo `fedora-node` representa o host Fedora. O Juice Shop não será coletado diretamente pelo Prometheus nesta etapa porque sua aplicação não é o coletor de infraestrutura. A disponibilidade HTTP será adicionada posteriormente com o Zabbix ou um exporter específico.
 
 ## 7. Criar a regra de alerta do Prometheus
 
@@ -166,11 +162,13 @@ groups:
 
 Depois de iniciar o Prometheus, verificar a regra em `http://localhost:9091/alerts`.
 
-## 8. Configurar o Node Exporter no Fedora
+## 8. Executar o Node Exporter no Fedora
 
 O Node Exporter precisa observar o host Fedora. Ele não deve ser tratado como se fosse um exporter comum do container do Juice Shop.
 
-Antes de escolher instalação nativa ou container, verificar a opção disponível no ambiente. Caso seja utilizado container, ele deverá receber as montagens e permissões necessárias para observar o host. Caso seja instalado nativamente, o serviço deverá escutar na porta local `9101` ou em outra porta livre.
+Nesta etapa, o Node Exporter é executado pelo Compose com montagens somente leitura de `/proc`, `/sys` e `/`. Essas montagens permitem que ele observe o Fedora, em vez de medir apenas o container do Juice Shop.
+
+O serviço usa internamente a porta `9100` e publica a porta `9101` no host.
 
 Validar o funcionamento:
 
@@ -178,14 +176,14 @@ Validar o funcionamento:
 curl http://localhost:9101/metrics | head
 ```
 
-Depois, a partir da rede do Compose, validar o nome `host.containers.internal`:
+Depois, a partir do container do Prometheus, validar o alvo:
 
 ```bash
-podman run --rm --network monitoramento docker.io/curlimages/curl:latest \
-  http://host.containers.internal:9101/metrics
+podman exec monitoramento-prometheus \
+  wget -q -O - http://host.containers.internal:9101/metrics | head
 ```
 
-Se o nome não resolver, será necessário ajustar o `extra_hosts` do Compose para apontar `host.containers.internal` ao gateway do host.
+Se esse comando não resolver o nome do host, verificar os logs do Prometheus e, se necessário, adicionar um mapeamento `extra_hosts` no serviço `prometheus`.
 
 ## 9. Configurar o Zabbix
 
@@ -196,7 +194,15 @@ O Zabbix será composto por:
 - frontend web;
 - Zabbix Agent no Fedora.
 
-O banco será utilizado somente pelo Zabbix e não deverá reutilizar o PostgreSQL da captura. O serviço do Zabbix Server deverá acessar o banco pelo nome do serviço Compose, por exemplo `zabbix-db:5432`.
+O banco será utilizado somente pelo Zabbix e não deverá reutilizar o PostgreSQL da captura. O serviço do Zabbix Server acessa o banco pelo nome do serviço Compose `zabbix-db:5432`.
+
+Subir a parte do Zabbix com:
+
+```bash
+podman compose pull zabbix-db zabbix-server zabbix-web
+podman compose up -d zabbix-db zabbix-server zabbix-web
+podman compose ps
+```
 
 No frontend, acessar:
 
@@ -204,16 +210,24 @@ No frontend, acessar:
 http://localhost:8081
 ```
 
+Credenciais iniciais padrão do frontend:
+
+```text
+Usuário: Admin
+Senha: zabbix
+```
+
+Alterar a senha após o primeiro acesso. A senha do banco está no `.env` local e não deve ser commitada.
+
 Na primeira configuração:
 
-1. confirmar a conexão com o banco;
-2. entrar com a conta administrativa definida no Compose;
-3. cadastrar o Fedora como host;
-4. associar o template Linux apropriado;
-5. informar o endereço do Zabbix Agent;
-6. confirmar que o host ficou disponível;
-7. verificar CPU, memória, disco e rede;
-8. criar uma trigger de CPU acima de 80% por dois minutos.
+1. entrar com a conta administrativa padrão;
+2. cadastrar o Fedora como host;
+3. associar o template Linux apropriado;
+4. informar o endereço do Zabbix Agent;
+5. confirmar que o host ficou disponível;
+6. verificar CPU, memória, disco e rede;
+7. criar uma trigger de CPU acima de 80% por dois minutos.
 
 As credenciais deverão ser definidas por variáveis em um arquivo `.env` local. Esse arquivo não deverá ser versionado.
 
@@ -223,10 +237,12 @@ Na raiz do projeto:
 
 ```bash
 podman compose config
-podman compose pull
-podman compose up -d
+podman compose pull prometheus node-exporter grafana zabbix-db zabbix-server zabbix-web
+podman compose up -d prometheus node-exporter grafana zabbix-db zabbix-server zabbix-web
 podman compose ps
 ```
+
+Aguarde pelo menos 15 segundos, que é o intervalo definido em `scrape_interval`, antes de verificar os alvos.
 
 Se for utilizada a ferramenta separada:
 
@@ -242,10 +258,13 @@ Consultar os logs quando algum serviço não iniciar:
 ```bash
 podman compose logs --tail=100 juice-shop
 podman compose logs --tail=100 prometheus
+podman compose logs --tail=100 node-exporter
 podman compose logs --tail=100 grafana
 podman compose logs --tail=100 zabbix-server
 podman compose logs --tail=100 zabbix-web
 ```
+
+O pacote oficial do Zabbix não oferece uma instalação específica para Fedora nas opções principais documentadas. Por isso, o Zabbix Server, o frontend e o banco ficam em containers. A instalação do agente que observará diretamente o Fedora será definida separadamente, sem tratar um agente comum de container como se fosse o host.
 
 ## 11. Validar a aplicação
 
@@ -268,9 +287,29 @@ podman network ls
 podman network inspect monitoramento
 ```
 
-## 12. Gerar requisições com dois clientes
+## 12. Gerar requisições com dois clientes e um bot
 
-Os clientes deverão permanecer dentro da rede Compose e executar requisições em intervalos controlados. O primeiro cliente poderá consultar a página principal e o segundo poderá consultar endpoints da API.
+Os clientes permanecem dentro da rede Compose e não publicam portas no Fedora. A configuração atual utiliza dois containers Alpine:
+
+- `cliente-1` pesquisa `apple` na API a cada dois segundos;
+- `cliente-2` pesquisa `banana` na API a cada três segundos.
+- `bot-trafego` simula uma navegação contínua, acessando a página inicial e buscas diferentes aproximadamente uma vez por segundo.
+
+Eles podem ser iniciados com:
+
+```bash
+podman compose up -d cliente-1 cliente-2 bot-trafego
+```
+
+Validar os containers:
+
+```bash
+podman compose ps
+```
+
+Os clientes acessam a API de busca em `http://juice-shop:3000/rest/products/search`, usando o nome do serviço na rede interna, e não `localhost`.
+
+No navegador, a busca aparece como `http://localhost:3100/#/search`. O trecho depois de `#` é uma rota do frontend e não é enviado diretamente ao servidor HTTP; a aplicação executa a chamada da API de busca por trás da tela. Por isso, os clientes usam o endpoint REST correspondente.
 
 Exemplo conceitual de comando dentro de um cliente:
 
@@ -287,8 +326,42 @@ Verificar os logs e o consumo:
 
 ```bash
 podman stats
-podman compose logs --tail=50 cliente-1 cliente-2
+podman compose logs --tail=50 cliente-1 cliente-2 bot-trafego
 ```
+
+### Manter o bot em execução
+
+O serviço `bot-trafego` possui `restart: unless-stopped`. Para iniciá-lo ou
+recriá-lo:
+
+```bash
+podman compose up -d bot-trafego
+```
+
+Para confirmar que está ativo:
+
+```bash
+podman ps --filter name=monitoramento-bot-trafego
+```
+
+Para parar somente o bot:
+
+```bash
+podman compose stop bot-trafego
+```
+
+O texto `monitoramento-bot-trafego Up` exibido pelo `podman ps` é um status,
+e não deve ser digitado como comando. O parâmetro `-f` em `podman logs -f`
+acompanha os logs continuamente; `Ctrl+C` encerra apenas o acompanhamento.
+
+Depois de reiniciar o Fedora, os serviços podem ser restaurados com:
+
+```bash
+podman compose up -d
+```
+
+Essa execução manual será automatizada posteriormente com `systemd --user`,
+caso seja necessário iniciar o laboratório automaticamente no login.
 
 ## 13. Configurar o Grafana
 
@@ -298,7 +371,22 @@ Acessar:
 http://localhost:3200
 ```
 
-Adicionar o Prometheus como fonte de dados usando a URL interna:
+Login inicial definido no `.env` local:
+
+```text
+Usuário: admin
+Senha: monitoramento-local-2026
+```
+
+O Prometheus e o dashboard são provisionados automaticamente pelos arquivos:
+
+```text
+grafana/provisioning/datasources/prometheus.yml
+grafana/provisioning/dashboards/dashboards.yml
+grafana/dashboards/infraestrutura-prometheus.json
+```
+
+A fonte de dados usa a URL interna:
 
 ```text
 http://prometheus:9090
@@ -308,11 +396,10 @@ O Grafana deve acessar o Prometheus pelo nome do serviço, e não por `localhost
 
 Depois:
 
-1. instalar ou habilitar a integração com Zabbix;
-2. cadastrar o endereço interno do Zabbix Server/Web conforme o plugin exigir;
-3. importar ou criar o dashboard;
-4. salvar o dashboard como JSON em `grafana/dashboards/`;
-5. testar painéis das duas fontes.
+1. abrir o dashboard na pasta `Infraestrutura`;
+2. confirmar os painéis de CPU, memória, disco, rede e targets;
+3. instalar a integração com Zabbix quando o servidor estiver cadastrado;
+4. testar os painéis das duas fontes.
 
 ## 14. Executar o teste de alta CPU
 
@@ -411,3 +498,37 @@ podman compose down -v
 ```
 
 O segundo comando remove o banco e os dados persistidos do Zabbix/Grafana definidos como volumes do projeto. Não utilizar comandos globais de limpeza do Podman, pois eles podem afetar os containers existentes na máquina.
+
+## 19. Dashboard Flask centralizado
+
+O projeto possui um dashboard próprio em:
+
+```text
+http://localhost:3300
+```
+
+Ele consulta as APIs internas do Prometheus e do Zabbix e verifica a
+disponibilidade do Juice Shop. Cada cartão, gráfico e tabela identifica sua
+fonte de dados.
+
+Para construir ou atualizar o container:
+
+```bash
+podman compose up -d --build dashboard
+```
+
+Para validar:
+
+```bash
+curl http://localhost:3300/health
+```
+
+Para exibir dados do Zabbix, inclua no `.env` local:
+
+```text
+ZABBIX_API_USER=Admin
+ZABBIX_API_PASSWORD=senha-atual-do-zabbix
+DASHBOARD_PORT=3300
+```
+
+Não versionar o `.env`.

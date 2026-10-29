@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoramento de Infraestrutura</title>
+  <style>
+    :root { color-scheme: dark; --bg:#111827; --panel:#1f2937; --line:#374151; --text:#e5e7eb; --muted:#9ca3af; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:14px system-ui,sans-serif; }
+    header { padding:22px 28px; border-bottom:1px solid var(--line); } h1 { margin:0 0 5px; font-size:25px; } h2 { margin:0 0 14px; font-size:17px; } h3 { margin:0 0 8px; font-size:15px; }
+    .subtitle,.source,.muted { color:var(--muted); } .source { font-size:12px; margin-top:8px; } main { padding:22px 28px; max-width:1500px; margin:auto; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:18px; } .panel { background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:17px; }
+    .value { font-size:28px; font-weight:700; margin:9px 0; } .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+    .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; } canvas { width:100%; height:190px; background:#172131; border-radius:6px; }
+    .tables { display:grid; grid-template-columns:repeat(auto-fit,minmax(390px,1fr)); gap:16px; margin-top:18px; } table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:8px 5px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { color:var(--muted); }
+    .pill { display:inline-block; border-radius:99px; padding:3px 8px; background:#374151; } .pill.ok { background:#064e3b; } .pill.bad { background:#7f1d1d; } .refresh { float:right; color:var(--muted); }
+  </style>
+</head>
+<body>
+<header><span class="refresh" id="updated">Atualizando...</span><h1>Monitoramento de Infraestrutura</h1><div class="subtitle">Visão unificada do Fedora, Juice Shop, Prometheus e Zabbix</div></header>
+<main>
+  <section class="grid">
+    <article class="panel"><h3>CPU do Fedora</h3><div id="cpu" class="value">--</div><div class="source">Fonte: Prometheus → Node Exporter (job fedora-node)</div></article>
+    <article class="panel"><h3>Memória utilizada</h3><div id="memory" class="value">--</div><div class="source">Fonte: Prometheus → Node Exporter</div></article>
+    <article class="panel"><h3>Disco utilizado</h3><div id="disk" class="value">--</div><div class="source">Fonte: Prometheus → Node Exporter</div></article>
+    <article class="panel"><h3>Disponibilidade</h3><div id="node" class="value">--</div><div class="source">Fonte: Prometheus → métrica up do Node Exporter</div></article>
+    <article class="panel"><h3>Juice Shop</h3><div id="juice" class="value">--</div><div class="source">Fonte: verificação HTTP do dashboard → Juice Shop</div></article>
+    <article class="panel"><h3>Rede</h3><div id="network" class="value">--</div><div class="source">Fonte: Prometheus → Node Exporter</div></article>
+  </section>
+  <section class="charts">
+    <article class="panel"><h2>CPU — últimos 30 minutos</h2><canvas id="cpuChart"></canvas><div class="source">Fonte: Prometheus API /api/v1/query_range → Node Exporter</div></article>
+    <article class="panel"><h2>Memória — últimos 30 minutos</h2><canvas id="memoryChart"></canvas><div class="source">Fonte: Prometheus API /api/v1/query_range → Node Exporter</div></article>
+  </section>
+  <section class="tables">
+    <article class="panel"><h2>Targets Prometheus</h2><table><thead><tr><th>Job</th><th>Endpoint</th><th>Estado</th></tr></thead><tbody id="targets"><tr><td colspan="3">Carregando...</td></tr></tbody></table><div class="source">Fonte: Prometheus API /api/v1/targets</div></article>
+    <article class="panel"><h2>Itens do Zabbix</h2><table><thead><tr><th>Item</th><th>Valor</th><th>Unidade</th></tr></thead><tbody id="zabbixItems"><tr><td colspan="3">Carregando...</td></tr></tbody></table><div class="source">Fonte: Zabbix API → host Fedora-monitorado</div></article>
+    <article class="panel"><h2>Problemas recentes</h2><table><thead><tr><th>Problema</th><th>Severidade</th><th>Data</th></tr></thead><tbody id="problems"><tr><td colspan="3">Carregando...</td></tr></tbody></table><div class="source">Fonte: Zabbix API /problem.get</div></article>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v, unit='') => v == null || typeof v !== 'number' ? '--' : `${v.toFixed(1)}${unit}`;
+const metric = value => value && typeof value === 'object' && 'value' in value ? value.value : value;
+function draw(id, points, color) { const c=$(id), dpr=devicePixelRatio||1, w=c.clientWidth, h=190; c.width=w*dpr; c.height=h*dpr; const x=c.getContext('2d'); x.scale(dpr,dpr); x.clearRect(0,0,w,h); if(!Array.isArray(points)||!points.length)return; const vals=points.map(p=>p[1]), min=Math.min(...vals), max=Math.max(...vals), span=max-min||1; x.strokeStyle=color; x.lineWidth=2; x.beginPath(); points.forEach((p,i)=>{const px=i*(w-16)/(points.length-1)+8, py=h-14-((p[1]-min)/span)*(h-28); i?x.lineTo(px,py):x.moveTo(px,py)}); x.stroke(); x.fillStyle='#9ca3af'; x.font='12px system-ui'; x.fillText(`${max.toFixed(1)}%`,8,15); x.fillText(`${min.toFixed(1)}%`,8,h-4); }
+async function load(){ try { const d=await (await fetch('/api/dashboard')).json(); const p=d.prometheus||{}; $('cpu').textContent=fmt(metric(p.cpu_percent),'%'); $('memory').textContent=fmt(metric(p.memory_percent),'%'); $('disk').textContent=fmt(metric(p.disk_percent),'%'); $('node').innerHTML=metric(p.node_up)===1?'<span class="ok">UP</span>':'<span class="bad">DOWN</span>'; const j=d.juice_shop; $('juice').innerHTML=j.available?`<span class="ok">UP</span> ${j.latency_ms} ms`:'<span class="bad">DOWN</span>'; const rx=metric(p.network_receive_bps), tx=metric(p.network_transmit_bps); $('network').textContent=`↓ ${fmt(rx,' B/s')} · ↑ ${fmt(tx,' B/s')}`; draw('cpuChart',metric(p.cpu_series),'#34d399'); draw('memoryChart',metric(p.memory_series),'#60a5fa'); $('targets').innerHTML=(metric(p.targets)||[]).map(t=>`<tr><td>${t.labels.job||'--'}</td><td>${t.scrapeUrl||'--'}</td><td><span class="pill ${t.health==='up'?'ok':'bad'}">${t.health}</span></td></tr>`).join('')||'<tr><td colspan="3">Nenhum dado</td></tr>'; const z=d.zabbix; if(!z.available){$('zabbixItems').innerHTML=`<tr><td colspan="3">${z.message||'Zabbix indisponível'}</td></tr>`;$('problems').innerHTML='<tr><td colspan="3">Zabbix indisponível</td></tr>';}else{$('zabbixItems').innerHTML=(z.items||[]).map(i=>`<tr><td>${i.name}</td><td>${i.lastvalue||'--'}</td><td>${i.units||''}</td></tr>`).join('')||'<tr><td colspan="3">Nenhum item</td></tr>';$('problems').innerHTML=(z.problems||[]).map(i=>`<tr><td>${i.name}</td><td>${i.severity}</td><td>${new Date(Number(i.clock)*1000).toLocaleString()}</td></tr>`).join('')||'<tr><td colspan="3">Nenhum problema</td></tr>';} $('updated').textContent='Atualizado: '+new Date().toLocaleTimeString(); } catch(e){$('updated').textContent='Erro: '+e.message;} }
+load(); setInterval(load,15000); addEventListener('resize',load);
+</script>
+</body>
+</html>
